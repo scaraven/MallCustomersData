@@ -2,7 +2,7 @@ from sklearn import linear_model
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas
-
+import random
 #draws Graphs for multiple attributes
 def visualiseAttr():
     for x in range(0,len(attributes)-1):
@@ -24,6 +24,32 @@ def plot3DAttr():
     ax.set_ylabel(attributes[3])
     plt.show()
 
+#Does cross validation with X folds
+def Xfoldcrossvalidation(csvfile,foldnum):
+
+    #split the data into ten samples
+    samples = []
+    length = len(csvfile.index)
+    if(foldnum >= length):
+        return csvfile
+    while length!=0:
+
+        onefold = []
+        for i in range(foldnum):
+            try:
+                rand = random.randint(0,length-1)
+                onefold.append(csvfile.iloc[rand])
+                csvfile = csvfile.drop(csvfile.index[rand])
+                length -=1
+            except:
+                breakpoint()
+        if(length < foldnum):
+            for i in range(length):
+                onefold.append(csvfile.iloc[i])
+                samples.append(onefold)
+            return samples
+        samples.append(onefold)
+
 attributes = ["CustomerID","Genre","Age","Annual Income (k$)","Spending Score (1-100)"]
 pdata = []
 csvfile = pandas.read_csv(".\Mall_Customers.csv")
@@ -31,3 +57,4 @@ spendingscore = csvfile['Spending Score (1-100)'].to_numpy()
 for x in range(0,len(attributes)):
     arrayfile = csvfile[attributes[x]].to_numpy()
     pdata.append(arrayfile)
+samples = Xfoldcrossvalidation(csvfile,10)

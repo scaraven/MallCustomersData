@@ -1,8 +1,10 @@
 from sklearn.cluster import KMeans
+from sklearn import metrics
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas
 import random
+from itertools import cycle
 
 
 ##########################################
@@ -59,7 +61,25 @@ def Xfoldcrossvalidation(csvfile,foldnum):
 def remobeObselete(csvfile):
     #Removes customerID, gender and Spending score
     return csvfile.drop([attributes[0],attributes[1],attributes[4]],axis=1)
-
+def crossValidation():
+    trialnum = 10
+    samples = Xfoldcrossvalidation(csvfile,trialnum)
+    npsamples = []
+    for series in samples:
+        npsamples.append(series.to_numpy())
+    breakpoint()
+    for x in range(trialnum):
+        #Creates DataFrames with only Age and Annual Income
+        training = pandas.DataFrame(columns=column_names)
+        test = pandas.DataFrame(columns=column_names)
+        if(x > 0):
+            training = training.append(npsamples[x:x+trialnum-1]+samples[0:x-1])
+        else:
+            training = training.append(npsamples[x:x+trialnum-1]+samples[0])
+        test = test.append(samples[x-1])
+        training = training.to_numpy()
+        test = test.to_numpy()
+        Clustering(training,test)
 
 ###############################################
 #Machine learning algorithms
@@ -67,18 +87,8 @@ def remobeObselete(csvfile):
 
 #############################
 #Clustering
-def Clustering(samples,csvfile):
-    clusternum = 6
-
-    #Creates DataFrames with only Age and Annual Income
-    training = pandas.DataFrame(columns=column_names)
-    test = pandas.DataFrame(columns=column_names)
-    for i in range(len(samples)-1):
-
-        training = training.append(samples[i])
-    test = test.append(samples[-1])
-    training = training.to_numpy()
-    test = test.to_numpy()
+def Clustering(training,test):
+    clusternum = 4
     #default 8 clusters
     kmeans = KMeans(n_clusters=clusternum).fit(training)
     centroids = kmeans.cluster_centers_
@@ -100,22 +110,32 @@ def Clustering(samples,csvfile):
             clusters[val][0] = training[x]
         else:
             clusters[val].append(training[x])
-    evalClustering(clusters,kmeans,csvfile)
-#Tests how effective our clustring algorithm has been
-def evalClustering(clusters,kmeans,csvfile):
+    #evalClustering(clusters)
+    evalClusteringResults(clusters,kmeans,csvfile,test,clusternum)
+    CompareSpendingmean(test,kmeans,clusters)
+def evalClustering(clusters):
+    marker = 0
+    colors = cycle('bgrcmykbgrcmykbgrcmykbgrcmyk')
+    for cluster, col in zip(clusters,colors):
+        for coord in cluster:
+            plt.plot(coord[0],coord[1],col+'.')
+        marker+=1
+    plt.show()
+#Tests how effective our results from the clustring algorithm has been
+def evalClusteringResults(clusters,kmeans,csvfile,test,clusternum):
+    labels_true = []
+    labels_clust = []
+    for coord in test:
+        spendingscore = lookUpSpending(coord)
+        instanceid = int(spendingscore) // (100 / clusternum)
+        labels_true.append(instanceid)
+        cluster_instanceid = kmeans.predict(coord.reshape(1,-1))[0]
+        labels_clust.append(cluster_instanceid)
+    print("Metric score - %f" %(metrics.adjusted_rand_score(labels_true, labels_clust)))
 
     #Function, given age and annual income, will output the spending score from observations
-    lookUpSpending = lambda coord,csvfile : csvfile.loc[(csvfile['Age'] == coord[0]) & (csvfile['Annual Income (k$)'] == coord[1])]['Spending Score (1-100)'].iloc[0]
-    #Iterates through every single cluster
-    for cluster in range(len(clusters)):
-        individ = clusters[cluster]
-        spendingscore = []
-        #Iterates through every point in cluster
-        for atr in individ:
-            spendingscore.append(lookUpSpending(atr,csvfile))
-        mean = calculateSpendingMean(individ,csvfile)
-        deviation = calcDeviation(mean,spendingscore)
-        print("Cluster %d has mean %f and deviation %f" %(cluster,mean,deviation))
+
+
 
 def calcDeviation(mean, instances):
     total = 0
@@ -130,20 +150,29 @@ def calculateSpendingMean(clusters,csvfile):
         total += csvfile.loc[(csvfile['Age'] == coord[0]) & (csvfile['Annual Income (k$)'] == coord[1])]['Spending Score (1-100)'].iloc[0]
     return total/num
 
-def testSpendingmean(test,kmeans,csvfile):
+def CompareSpendingmean(test,kmeans,clusters):
     for x in range(len(test)):
-        print("Spending mean of - %d belongs to cluster - %s" %(lookUpSpending(test[x], csvfile),kmeans.predict(test[x].reshape(1,-1))))
+        print("Spending mean of - %d belongs to cluster - %s" %(lookUpSpending(test[x]),kmeans.predict(test[x].reshape(1,-1))))
+    #Iterates through every single cluster
+
+    for cluster in range(len(clusters)):
+        individ = clusters[cluster]
+        spendingscore = []
+        #Iterates through every point in cluster
+        for atr in individ:
+            spendingscore.append(lookUpSpending(atr))
+        mean = calculateSpendingMean(individ,csvfile)
+        deviation = calcDeviation(mean,spendingscore)
+        print("Cluster %d has mean %f and deviation %f" %(cluster,mean,deviation))
 ##############################################
 #Main code
 attributes = ["CustomerID","Genre","Age","Annual Income (k$)","Spending Score (1-100)"]
 pdata = []
-
+lookUpSpending = lambda coord : csvfile.loc[(csvfile['Age'] == coord[0]) & (csvfile['Annual Income (k$)'] == coord[1])]['Spending Score (1-100)'].iloc[0]
 column_names = [attributes[2],attributes[3]]
 csvfile = pandas.read_csv(".\Mall_Customers.csv")
 spendingscore = csvfile['Spending Score (1-100)'].to_numpy()
 for x in range(0,len(attributes)):
     arrayfile = csvfile[attributes[x]].to_numpy()
     pdata.append(arrayfile)
-samples = Xfoldcrossvalidation(csvfile,10)
-#plot3DAttr(csvfile[attributes[2]],csvfile[attributes[3]],csvfile[attributes[4]])
-Clustering(samples,csvfile)
+crossValidation()

@@ -1,178 +1,58 @@
-from sklearn.cluster import KMeans
-from sklearn import metrics
 import matplotlib.pyplot as plt
+import seaborn as sns
+
+import pandas as pd
 import numpy as np
-import pandas
-import random
-from itertools import cycle
 
+from sklearn import linear_model,preprocessing,svm,cluster,pipeline
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import explained_variance_score,mean_squared_error
 
-##########################################
-#Visualising pdata
-#draws Graphs for multiple attributes
-def visualiseAttr():
-    for x in range(0,len(attributes)-1):
-        arrayfile = csvfile[attributes[x]].to_numpy()
-        pdata.append(arrayfile)
-        plt.plot(arrayfile,spendingscore,"ro")
-        plt.ylabel("Spending Score (1-100)")
-        plt.xlabel(attributes[x])
-        plt.show()
-    plt.plot(pdata[2],pdata[3],"ro")
-    plt.xlabel(attributes[2])
-    plt.ylabel(attributes[3])
-    plt.show()
-def plot3DAttr(xdata,ydata,zdata):
-    ax = plt.axes(projection="3d")
-    ax.scatter3D(xdata,ydata,zdata,cmap="Greens")
-    ax.set_zlabel(attributes[4])
-    ax.set_xlabel(attributes[2])
-    ax.set_ylabel(attributes[3])
-    plt.show()
-
-
-###############################################
-#Preparing data
-#Does cross validation with X folds
-def Xfoldcrossvalidation(csvfile,foldnum):
-    csvfile = remobeObselete(csvfile)
-    #split the data into ten samples
-    samples = []
-    length = len(csvfile.index)
-    if(foldnum >= length):
-        return csvfile
-    while length!=0:
-
-        onefold = pandas.DataFrame(columns=column_names)
-        for i in range(foldnum):
-            try:
-                rand = random.randint(0,length-1)
-                onefold = onefold.append(csvfile.iloc[rand])
-                csvfile = csvfile.drop(csvfile.index[rand])
-                length -=1
-            except:
-                breakpoint()
-        if(length < foldnum):
-            for i in range(length):
-                onefold.append(csvfile.iloc[i])
-                samples.append(onefold)
-            return samples
-        samples.append(onefold)
-def remobeObselete(csvfile):
-    #Removes customerID, gender and Spending score
-    return csvfile.drop([attributes[0],attributes[1],attributes[4]],axis=1)
-def crossValidation():
-    trialnum = 10
-    samples = Xfoldcrossvalidation(csvfile,trialnum)
-    npsamples = []
-    for series in samples:
-        npsamples.append(series.to_numpy())
-    breakpoint()
-    for x in range(trialnum):
-        #Creates DataFrames with only Age and Annual Income
-        training = pandas.DataFrame(columns=column_names)
-        test = pandas.DataFrame(columns=column_names)
-        if(x > 0):
-            training = training.append(npsamples[x:x+trialnum-1]+samples[0:x-1])
-        else:
-            training = training.append(npsamples[x:x+trialnum-1]+samples[0])
-        test = test.append(samples[x-1])
-        training = training.to_numpy()
-        test = test.to_numpy()
-        Clustering(training,test)
-
-###############################################
-#Machine learning algorithms
-
-
-#############################
+#Used to encode nominal data
+le = preprocessing.LabelEncoder()
+#Ridge regression data
+reg = linear_model.Ridge(alpha=.5)
+#Support vector machine using the rbf kernel
+regr = svm.SVR(kernel='rbf')
+clf = pipeline.make_pipeline(preprocessing.StandardScaler(),regr)
 #Clustering
-def Clustering(training,test):
-    clusternum = 4
-    #default 8 clusters
-    kmeans = KMeans(n_clusters=clusternum).fit(training)
-    centroids = kmeans.cluster_centers_
-    distarray = []
-    dist = lambda centr,s1,x : ((centr[x][0]-s1[0])**2 + (centr[x][1]-s1[1])**2)**0.5
-    for x in range(len(centroids)):
-        distarray.append(dist(centroids,test[0],x))
+kmeans = cluster.KMeans(n_clusters=8)
 
-    #This is a list which keeps holds of all the points sorted into clusters
-    clusters = [[[0,0]] for x in range(clusternum)]
+mall_data = pd.read_csv("Mall_Customers.csv")
+mall_data['Genre'] = le.fit_transform(mall_data['Genre'])
+print(mall_data.head())
 
-    #This loops through every instance in the training data
-    for x in range(len(kmeans.labels_)):
-        #Find which cluster instance X belongs to
-        val = kmeans.labels_[x]
+#Separate target and predictor data
+target = mall_data['Spending Score (1-100)']
+data = mall_data.drop(['Spending Score (1-100)','CustomerID'],axis=1)
 
-        #Add the instance to its cluster
-        if(clusters[val][0][0] == 0 & clusters[val][0][1] == 0):
-            clusters[val][0] = training[x]
-        else:
-            clusters[val].append(training[x])
-    #evalClustering(clusters)
-    evalClusteringResults(clusters,kmeans,csvfile,test,clusternum)
-    CompareSpendingmean(test,kmeans,clusters)
-def evalClustering(clusters):
-    marker = 0
-    colors = cycle('bgrcmykbgrcmykbgrcmykbgrcmyk')
-    for cluster, col in zip(clusters,colors):
-        for coord in cluster:
-            plt.plot(coord[0],coord[1],col+'.')
-        marker+=1
-    plt.show()
-#Tests how effective our results from the clustring algorithm has been
-def evalClusteringResults(clusters,kmeans,csvfile,test,clusternum):
-    labels_true = []
-    labels_clust = []
-    for coord in test:
-        spendingscore = lookUpSpending(coord)
-        instanceid = int(spendingscore) // (100 / clusternum)
-        labels_true.append(instanceid)
-        cluster_instanceid = kmeans.predict(coord.reshape(1,-1))[0]
-        labels_clust.append(cluster_instanceid)
-    print("Metric score - %f" %(metrics.adjusted_rand_score(labels_true, labels_clust)))
+#Split into test and training data
+data_train, data_test, target_train, target_test = train_test_split(data,target, test_size = 0.30, random_state=10)
+reg.fit(data_train,target_train)
+pred = reg.predict(data_test)
+print("Ridge Regression Mean error - %f" %(mean_squared_error(target_test,pred,squared=False)))
 
-    #Function, given age and annual income, will output the spending score from observations
+clf.fit(data_train,target_train)
+pred = clf.predict(data_test)
+print("SVR with RBF kernel mean error - %f" % (mean_squared_error(target_test,pred,squared=False)) )
 
+#Assign class depending on clusters
+kmeans.fit(data_train)
+#Generate regression model for each class
+cluster_class = kmeans.labels_
+print(kmeans.predict((data_test.iloc[0].to_numpy()).reshape(1,-1))[0])
+#breakpoint()
+data_train = data_train.to_numpy()
+data_test = data_test.to_numpy()
+target_train = target_train.to_numpy()
 
-
-def calcDeviation(mean, instances):
-    total = 0
-    num = len(instances)
-    for x in range(num):
-        total += (mean - instances[x])**2
-    return (total / num)**0.5
-def calculateSpendingMean(clusters,csvfile):
-    num = len(clusters)
-    total = 0
-    for coord in clusters:
-        total += csvfile.loc[(csvfile['Age'] == coord[0]) & (csvfile['Annual Income (k$)'] == coord[1])]['Spending Score (1-100)'].iloc[0]
-    return total/num
-
-def CompareSpendingmean(test,kmeans,clusters):
-    for x in range(len(test)):
-        print("Spending mean of - %d belongs to cluster - %s" %(lookUpSpending(test[x]),kmeans.predict(test[x].reshape(1,-1))))
-    #Iterates through every single cluster
-
-    for cluster in range(len(clusters)):
-        individ = clusters[cluster]
-        spendingscore = []
-        #Iterates through every point in cluster
-        for atr in individ:
-            spendingscore.append(lookUpSpending(atr))
-        mean = calculateSpendingMean(individ,csvfile)
-        deviation = calcDeviation(mean,spendingscore)
-        print("Cluster %d has mean %f and deviation %f" %(cluster,mean,deviation))
-##############################################
-#Main code
-attributes = ["CustomerID","Genre","Age","Annual Income (k$)","Spending Score (1-100)"]
-pdata = []
-lookUpSpending = lambda coord : csvfile.loc[(csvfile['Age'] == coord[0]) & (csvfile['Annual Income (k$)'] == coord[1])]['Spending Score (1-100)'].iloc[0]
-column_names = [attributes[2],attributes[3]]
-csvfile = pandas.read_csv(".\Mall_Customers.csv")
-spendingscore = csvfile['Spending Score (1-100)'].to_numpy()
-for x in range(0,len(attributes)):
-    arrayfile = csvfile[attributes[x]].to_numpy()
-    pdata.append(arrayfile)
-crossValidation()
+#These two functions are used to retrieve data and predictors with class y
+cluster_data_train = lambda y: [ data_train[x] for x in range(len(data_train)) if int(kmeans.predict(data_train[x].reshape(1,-1))[0]) == y]
+cluster_target_train = lambda y: [ target_train[x] for x in range(len(data_train)) if int(kmeans.predict(data_train[x].reshape(1,-1))[0]) == y]
+#Store SVR for every class
+svc_array = [ pipeline.make_pipeline(preprocessing.StandardScaler(),svm.SVR(kernel='linear',gamma='auto')).fit(cluster_data_train(x),cluster_target_train(x)) for x in set(cluster_class)]
+data_class = kmeans.predict(data_test)
+pred = []
+for output in range(len(data_class)):
+    pred.append(svc_array[data_class[output]].predict(data_test[output].reshape(1,-1)))
+print("Clustering with SVR mean error - %f" % (mean_squared_error(target_test,pred,squared=False)))
